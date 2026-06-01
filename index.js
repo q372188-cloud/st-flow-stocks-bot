@@ -23,6 +23,11 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+const decisionSupabase = createClient(
+  process.env.DECISION_SUPABASE_URL,
+  process.env.DECISION_SUPABASE_KEY
+);
+
 // =====================
 // ENV Settings
 // =====================
@@ -57,13 +62,35 @@ const userCooldown = new Map();
 const gexCache = new Map();
 const lastAlert = new Map();
 
-// ✅ منع تكرار معالجة نفس رسالة تيليجرام
 const processedMessages = new Set();
-
-// ✅ منع تشغيل فحصين لنفس السهم بنفس اللحظة
 const activeManualScans = new Set();
 
 let autoScanIndex = 0;
+
+// =====================
+// Save Decision Messages
+// =====================
+
+async function saveDecisionMessage(source, symbol, message) {
+  try {
+    const { error } = await decisionSupabase
+      .from('decision_messages')
+      .insert({
+        source,
+        symbol,
+        message,
+        processed: false
+      });
+
+    if (error) {
+      console.error('SAVE DECISION MESSAGE ERROR:', error.message);
+    } else {
+      console.log(`DECISION MESSAGE SAVED: ${source} ${symbol}`);
+    }
+  } catch (err) {
+    console.error('SAVE DECISION MESSAGE ERROR:', err.message);
+  }
+}
 
 // =====================
 // Helpers
@@ -84,6 +111,7 @@ function fmt(n) {
 
 function fmtCompact(n) {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return 'N/A';
+
   const num = Number(n);
   const abs = Math.abs(num);
 
@@ -96,6 +124,7 @@ function fmtCompact(n) {
 
 function fmtPrice(n) {
   if (n === null || n === undefined || Number.isNaN(Number(n))) return 'N/A';
+
   return Number(n).toLocaleString('en-US', {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2
@@ -202,6 +231,7 @@ async function hasActiveSubscription(userId) {
     .single();
 
   if (error || !data) return false;
+
   return Number(data.expires_at) > Date.now();
 }
 
@@ -228,11 +258,13 @@ bot.onText(/^\/create\s+(\d+)$/i, async (msg, match) => {
   const days = parseInt(match[1], 10);
   const code = generateCode();
 
-  const { error } = await supabase.from('invite_codes').insert({
-    code,
-    days,
-    used: false
-  });
+  const { error } = await supabase
+    .from('invite_codes')
+    .insert({
+      code,
+      days,
+      used: false
+    });
 
   if (error) {
     console.error('CREATE CODE ERROR:', error.message);
@@ -241,7 +273,7 @@ bot.onText(/^\/create\s+(\d+)$/i, async (msg, match) => {
 
   await bot.sendMessage(
     msg.chat.id,
-    `✅ تم إنشاء كود جديد
+`✅ تم إنشاء كود جديد
 
 🔑 الكود:
 ${code}
@@ -293,6 +325,7 @@ bot.onText(/^\/users$/i, async (msg) => {
 
   for (const u of data) {
     const days = await remainingDays(u.user_id);
+
     text += `🆔 ${u.user_id}
 ⏳ المتبقي: ${days} يوم
 
@@ -312,7 +345,10 @@ bot.onText(/^\/remove\s+(\d+)$/i, async (msg, match) => {
     .delete()
     .eq('user_id', String(targetId));
 
-  await bot.sendMessage(msg.chat.id, `✅ تم حذف المستخدم ${targetId}`);
+  await bot.sendMessage(
+    msg.chat.id,
+    `✅ تم حذف المستخدم ${targetId}`
+  );
 });
 
 async function activateCode(code, userId, chatId) {
@@ -331,10 +367,12 @@ async function activateCode(code, userId, chatId) {
 
   const expiresAt = Date.now() + data.days * 24 * 60 * 60 * 1000;
 
-  await supabase.from('subscribers').upsert({
-    user_id: String(userId),
-    expires_at: expiresAt
-  });
+  await supabase
+    .from('subscribers')
+    .upsert({
+      user_id: String(userId),
+      expires_at: expiresAt
+    });
 
   await supabase
     .from('invite_codes')
@@ -347,7 +385,7 @@ async function activateCode(code, userId, chatId) {
 
   await bot.sendMessage(
     chatId,
-    `✅ تم تفعيل اشتراكك
+`✅ تم تفعيل اشتراكك
 
 ⏳ المدة: ${data.days} يوم
 📅 المتبقي: ${data.days} يوم`
@@ -381,7 +419,9 @@ async function getOptionSnapshot(symbol) {
     if (results.length >= 1000) break;
   }
 
-  return { results };
+  return {
+    results
+  };
 }
 
 async function getStockBars(symbol) {
@@ -484,6 +524,7 @@ function findLastSwingLow(bars, maxPrice = Infinity) {
   }
 
   const recent = bars.slice(-30).filter(b => b.low < maxPrice);
+
   if (!recent.length) return null;
 
   return Math.min(...recent.map(b => b.low));
@@ -497,6 +538,7 @@ function findLastSwingHigh(bars, minPrice = 0) {
   }
 
   const recent = bars.slice(-30).filter(b => b.high > minPrice);
+
   if (!recent.length) return null;
 
   return Math.max(...recent.map(b => b.high));
@@ -515,7 +557,11 @@ function calculateTechnicalStop(bars, bias, entry, spot) {
     const swingLow = findLastSwingLow(bars, entry);
 
     if (!swingLow) {
-      return { price: null, source: 'لم يتم العثور على قاع فني', valid: false };
+      return {
+        price: null,
+        source: 'لم يتم العثور على قاع فني',
+        valid: false
+      };
     }
 
     const stop = swingLow * (1 - TECH_STOP_BUFFER_PCT);
@@ -533,7 +579,11 @@ function calculateTechnicalStop(bars, bias, entry, spot) {
     const swingHigh = findLastSwingHigh(bars, entry);
 
     if (!swingHigh) {
-      return { price: null, source: 'لم يتم العثور على قمة فنية', valid: false };
+      return {
+        price: null,
+        source: 'لم يتم العثور على قمة فنية',
+        valid: false
+      };
     }
 
     const stop = swingHigh * (1 + TECH_STOP_BUFFER_PCT);
@@ -598,14 +648,36 @@ function selectTopLevels(rows, spot, side, count = 3) {
 
 function calculateNewPositions(volume, oi) {
   if (!volume || !oi) {
-    return { label: 'غير واضح', ratio: 0, score: 0 };
+    return {
+      label: 'غير واضح',
+      ratio: 0,
+      score: 0
+    };
   }
 
   const ratio = volume / oi;
 
-  if (ratio >= 2.5) return { label: 'مرتفع', ratio, score: 2 };
-  if (ratio >= 1.2) return { label: 'متوسط', ratio, score: 1 };
-  return { label: 'ضعيف', ratio, score: 0 };
+  if (ratio >= 2.5) {
+    return {
+      label: 'مرتفع',
+      ratio,
+      score: 2
+    };
+  }
+
+  if (ratio >= 1.2) {
+    return {
+      label: 'متوسط',
+      ratio,
+      score: 1
+    };
+  }
+
+  return {
+    label: 'ضعيف',
+    ratio,
+    score: 0
+  };
 }
 
 function calculateGex(data) {
@@ -670,8 +742,7 @@ function calculateGex(data) {
     if (oi && delta) {
       totalDex += delta * oi * 100;
     }
-
-    if (type === 'call') {
+        if (type === 'call') {
       callVolume += volume;
       byStrike[strike].callVolume += volume;
     }
@@ -713,12 +784,16 @@ function calculateGex(data) {
 
   const callWall =
     resistances[0] ||
-    sourceRows.filter(r => r.strike >= spot).sort((a, b) => Math.abs(b.netGex) - Math.abs(a.netGex))[0] ||
+    sourceRows
+      .filter(r => r.strike >= spot)
+      .sort((a, b) => Math.abs(b.netGex) - Math.abs(a.netGex))[0] ||
     sourceRows[0];
 
   const putWall =
     supports[0] ||
-    sourceRows.filter(r => r.strike <= spot).sort((a, b) => Math.abs(b.netGex) - Math.abs(a.netGex))[0] ||
+    sourceRows
+      .filter(r => r.strike <= spot)
+      .sort((a, b) => Math.abs(b.netGex) - Math.abs(a.netGex))[0] ||
     sourceRows[0];
 
   const flip = sourceRows.reduce((a, b) =>
@@ -779,6 +854,7 @@ function calculateGex(data) {
     putStrengthRatio: Math.abs(putWall.netGex) / strongestWall
   };
 }
+
 // =====================
 // Real Ask/Bid Flow
 // =====================
@@ -788,10 +864,14 @@ function findNearestQuote(tradeTs, quotesAsc) {
 
   for (const q of quotesAsc) {
     const qTs = getTs(q);
+
     if (!qTs) continue;
 
-    if (qTs <= tradeTs) nearest = q;
-    else break;
+    if (qTs <= tradeTs) {
+      nearest = q;
+    } else {
+      break;
+    }
   }
 
   return nearest || quotesAsc[quotesAsc.length - 1] || null;
@@ -804,16 +884,33 @@ function classifyTradeByQuote(trade, quote) {
   const ask = getAsk(quote);
 
   if (!price || !size || !bid || !ask || ask <= bid) {
-    return { side: 'neutral', size: 0 };
+    return {
+      side: 'neutral',
+      size: 0
+    };
   }
 
   const spread = ask - bid;
   const tolerance = Math.max(spread * 0.15, 0.01);
 
-  if (price >= ask - tolerance) return { side: 'ask', size };
-  if (price <= bid + tolerance) return { side: 'bid', size };
+  if (price >= ask - tolerance) {
+    return {
+      side: 'ask',
+      size
+    };
+  }
 
-  return { side: 'neutral', size };
+  if (price <= bid + tolerance) {
+    return {
+      side: 'bid',
+      size
+    };
+  }
+
+  return {
+    side: 'neutral',
+    size
+  };
 }
 
 async function calculateRealAskBidFlow(contracts) {
@@ -861,12 +958,19 @@ async function calculateRealAskBidFlow(contracts) {
         const quote = findNearestQuote(getTs(trade), quotesAsc);
         const classified = classifyTradeByQuote(trade, quote);
 
-        if (classified.side === 'ask') askVolume += classified.size;
-        else if (classified.side === 'bid') bidVolume += classified.size;
-        else neutralVolume += classified.size;
+        if (classified.side === 'ask') {
+          askVolume += classified.size;
+        } else if (classified.side === 'bid') {
+          bidVolume += classified.size;
+        } else {
+          neutralVolume += classified.size;
+        }
       }
     } catch (err) {
-      console.error(`FLOW ERROR ${c.ticker}:`, err.response?.data || err.message);
+      console.error(
+        `FLOW ERROR ${c.ticker}:`,
+        err.response?.data || err.message
+      );
     }
   }
 
@@ -939,8 +1043,12 @@ function calculateScore(a) {
   }
 
   if (a.newPositions.score >= 2) {
-    if (a.callFlowPct >= a.putFlowPct) callScore += 1;
-    else putScore += 1;
+    if (a.callFlowPct >= a.putFlowPct) {
+      callScore += 1;
+    } else {
+      putScore += 1;
+    }
+
     reasons.push('✅ دخول مراكز جديدة مرتفع');
   }
 
@@ -981,11 +1089,13 @@ function calculateScore(a) {
     reasons
   };
 }
-
 function extendTarget(level2, level3) {
   if (!level2 || !level3) return 'N/A';
+
   const step = Math.abs(Number(level3) - Number(level2));
+
   if (!step) return 'N/A';
+
   return Number(level3) + step;
 }
 
@@ -1022,7 +1132,10 @@ function buildTradePlan(a) {
     const entry = s1?.strike || null;
     const tp1 = s2?.strike || s1?.strike || 'N/A';
     const tp2 = s3?.strike || 'N/A';
-    const tp3 = s2 && s3 ? Number(s3.strike) - Math.abs(Number(s2.strike) - Number(s3.strike)) : 'N/A';
+    const tp3 =
+      s2 && s3
+        ? Number(s3.strike) - Math.abs(Number(s2.strike) - Number(s3.strike))
+        : 'N/A';
 
     return {
       direction: '🔴 PUT BIAS',
@@ -1088,6 +1201,7 @@ async function analyzeGex(symbol) {
 
   return analysis;
 }
+
 // =====================
 // Message
 // =====================
@@ -1122,7 +1236,9 @@ function buildSupportList(a) {
 }
 
 function buildStopText(a) {
-  if (a.scoreData.bias === 'NEUTRAL') return 'لا يوجد وقف لأن الحالة Neutral';
+  if (a.scoreData.bias === 'NEUTRAL') {
+    return 'لا يوجد وقف لأن الحالة Neutral';
+  }
 
   if (!a.technicalStop?.price) {
     return `غير متاح
@@ -1271,7 +1387,6 @@ ${plan.direction}
 
 ⚠️ ليست توصية شراء أو بيع`;
 }
-
 // =====================
 // Manual Requests
 // =====================
@@ -1322,39 +1437,59 @@ bot.on('message', async (msg) => {
       const last = userCooldown.get(chatId);
 
       if (last && Date.now() - last < USER_COOLDOWN_MS) {
-        return bot.sendMessage(chatId, '⏳ انتظر 15 ثانية قبل طلب سهم جديد.');
+        return bot.sendMessage(
+          chatId,
+          '⏳ انتظر 15 ثانية قبل طلب سهم جديد.'
+        );
       }
 
       userCooldown.set(chatId, Date.now());
 
-      await bot.sendMessage(chatId, `⏳ جاري تحليل Smart Flow لـ ${text}...`);
+      await bot.sendMessage(
+        chatId,
+        `⏳ جاري تحليل Smart Flow لـ ${text}...`
+      );
 
       const analysis = await analyzeGex(text);
 
       const reportText = buildMessage(text, analysis);
 
-await bot.sendMessage(
-  chatId,
-  reportText
-);
+      await bot.sendMessage(
+        chatId,
+        reportText
+      );
 
-if (
-  process.env.DECISION_GROUP_ID &&
-  String(chatId) !== String(process.env.DECISION_GROUP_ID)
-) {
-  await bot.sendMessage(
-    process.env.DECISION_GROUP_ID,
-    reportText
-  );
-}
+      await saveDecisionMessage(
+        'GAMMA',
+        text,
+        reportText
+      );
+
+      if (
+        process.env.DECISION_GROUP_ID &&
+        String(chatId) !== String(process.env.DECISION_GROUP_ID)
+      ) {
+        await bot.sendMessage(
+          process.env.DECISION_GROUP_ID,
+          reportText
+        );
+      }
     } finally {
       activeManualScans.delete(scanKey);
     }
   } catch (err) {
-    console.error('MANUAL ERROR:', err.response?.data || err.message);
-    await bot.sendMessage(msg.chat.id, '❌ لم أستطع جلب بيانات GEX لهذا الرمز.');
+    console.error(
+      'MANUAL ERROR:',
+      err.response?.data || err.message
+    );
+
+    await bot.sendMessage(
+      msg.chat.id,
+      '❌ لم أستطع جلب بيانات GEX لهذا الرمز.'
+    );
   }
 });
+
 // =====================
 // Auto Scan
 // =====================
@@ -1385,9 +1520,18 @@ async function autoScan() {
     const nearFlip =
       Math.abs(a.spot - a.flip.strike) / a.spot <= 0.005;
 
-    const strongScore = a.scoreData.confidence >= 7 && a.scoreData.bias !== 'NEUTRAL';
+    const strongScore =
+      a.scoreData.confidence >= 7 &&
+      a.scoreData.bias !== 'NEUTRAL';
 
-    if (!nearResistance && !nearSupport && !nearFlip && !strongScore) return;
+    if (
+      !nearResistance &&
+      !nearSupport &&
+      !nearFlip &&
+      !strongScore
+    ) {
+      return;
+    }
 
     const reason = [
       nearResistance ? `🟩 قريب من مقاومة جاما ${r1.strike}` : null,
@@ -1399,16 +1543,34 @@ async function autoScan() {
     const key = `${symbol}-${reason}`;
     const last = lastAlert.get(key);
 
-    if (last && Date.now() - last < ALERT_COOLDOWN_MS) return;
+    if (last && Date.now() - last < ALERT_COOLDOWN_MS) {
+      return;
+    }
 
     lastAlert.set(key, Date.now());
 
+    const autoText =
+`🚨 تنبيه تلقائي Smart Flow
+
+${reason}
+
+${buildMessage(symbol, a)}`;
+
     await bot.sendMessage(
       ADMIN_CHAT_ID,
-      `🚨 تنبيه تلقائي Smart Flow\n\n${reason}\n\n${buildMessage(symbol, a)}`
+      autoText
+    );
+
+    await saveDecisionMessage(
+      'GAMMA_AUTO',
+      symbol,
+      autoText
     );
   } catch (err) {
-    console.error(`AUTO ERROR ${symbol}:`, err.response?.data || err.message);
+    console.error(
+      `AUTO ERROR ${symbol}:`,
+      err.response?.data || err.message
+    );
   }
 }
 
@@ -1449,7 +1611,7 @@ function isMarketOpenNY() {
 
 bot.sendMessage(
   ADMIN_CHAT_ID,
-  '✅ ST Smart Flow Bot اشتغل: وقف فني + Neutral + DEX + Flow'
+  '✅ ST Smart Flow Bot اشتغل: وقف فني + Neutral + DEX + Flow + Decision Messages'
 ).catch(err => {
   console.error('START MESSAGE ERROR:', err.message);
 });
@@ -1466,4 +1628,4 @@ if (isMarketOpenNY()) {
   autoScan();
 }
 
-console.log('🚀 ST Smart Flow Stocks Bot Started');
+console.log('🚀 ST Smart Flow Stocks Bot Started + Decision Messages');
