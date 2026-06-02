@@ -16,6 +16,7 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, {
 });
 
 const API_KEY = process.env.MASSIVE_API_KEY;
+const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
 
 const supabase = createClient(
@@ -148,7 +149,6 @@ function pct(part, total) {
   if (!total) return 0;
   return (part / total) * 100;
 }
-
 function distancePercent(spot, strike) {
   if (!spot || !strike) return null;
   return ((strike - spot) / spot) * 100;
@@ -217,6 +217,7 @@ function getISODateDaysAgoNY(daysAgo) {
   const get = type => parts.find(p => p.type === type)?.value;
   return `${get('year')}-${get('month')}-${get('day')}`;
 }
+
 // =====================
 // Subscription
 // =====================
@@ -334,7 +335,6 @@ bot.onText(/^\/users$/i, async (msg) => {
 
   await bot.sendMessage(msg.chat.id, text);
 });
-
 bot.onText(/^\/remove\s+(\d+)$/i, async (msg, match) => {
   if (!isAdmin(msg.from.id)) return;
 
@@ -392,6 +392,43 @@ async function activateCode(code, userId, chatId) {
   );
 
   return true;
+}
+
+// =====================
+// Price Source - Finnhub
+// =====================
+
+async function getLiveStockPrice(symbol) {
+  if (!FINNHUB_API_KEY) {
+    console.error('FINNHUB_API_KEY is missing');
+    return null;
+  }
+
+  try {
+    const res = await axios.get(
+      'https://finnhub.io/api/v1/quote',
+      {
+        params: {
+          symbol,
+          token: FINNHUB_API_KEY
+        },
+        timeout: 10000
+      }
+    );
+
+    const price = safeNumber(res.data?.c, null);
+
+    console.log('FINNHUB PRICE:', symbol, res.data);
+
+    return price && price > 0 ? price : null;
+  } catch (err) {
+    console.error(
+      `FINNHUB PRICE ERROR ${symbol}:`,
+      err.response?.data || err.message
+    );
+
+    return null;
+  }
 }
 
 // =====================
@@ -679,15 +716,14 @@ function calculateNewPositions(volume, oi) {
     score: 0
   };
 }
-
-function calculateGex(data) {
+function calculateGex(data, liveSpot = null) {
   const results = data.results || [];
   const expInfo = getExpirationInfo(results);
 
   const byStrike = {};
   const flowContracts = [];
 
-  let spot = null;
+  let spot = liveSpot;
   let totalGex = 0;
   let totalDex = 0;
 
@@ -742,7 +778,8 @@ function calculateGex(data) {
     if (oi && delta) {
       totalDex += delta * oi * 100;
     }
-        if (type === 'call') {
+
+    if (type === 'call') {
       callVolume += volume;
       byStrike[strike].callVolume += volume;
     }
@@ -912,7 +949,6 @@ function classifyTradeByQuote(trade, quote) {
     size
   };
 }
-
 async function calculateRealAskBidFlow(contracts) {
   if (!FLOW_ENABLED || !contracts || !contracts.length) {
     return {
@@ -1089,6 +1125,7 @@ function calculateScore(a) {
     reasons
   };
 }
+
 function extendTarget(level2, level3) {
   if (!level2 || !level3) return 'N/A';
 
@@ -1173,15 +1210,26 @@ async function analyzeGex(symbol) {
     return cached.data;
   }
 
-  const [data, bars] = await Promise.all([
+  const [data, bars, liveSpot] = await Promise.all([
     getOptionSnapshot(symbol),
     getStockBars(symbol).catch(err => {
       console.error(`BARS ERROR ${symbol}:`, err.response?.data || err.message);
       return [];
-    })
+    }),
+    getLiveStockPrice(symbol)
   ]);
 
-  const analysis = calculateGex(data);
+  const fallbackSpot =
+    bars.length > 0
+      ? bars[bars.length - 1].close
+      : null;
+
+  const finalSpot =
+    liveSpot ||
+    fallbackSpot ||
+    null;
+
+  const analysis = calculateGex(data, finalSpot);
 
   analysis.realFlow = await calculateRealAskBidFlow(analysis.flowCandidates);
   analysis.scoreData = calculateScore(analysis);
@@ -1201,7 +1249,6 @@ async function analyzeGex(symbol) {
 
   return analysis;
 }
-
 // =====================
 // Message
 // =====================
@@ -1387,6 +1434,7 @@ ${plan.direction}
 
 ⚠️ ليست توصية شراء أو بيع`;
 }
+
 // =====================
 // Manual Requests
 // =====================
@@ -1611,7 +1659,7 @@ function isMarketOpenNY() {
 
 bot.sendMessage(
   ADMIN_CHAT_ID,
-  '✅ ST Smart Flow Bot اشتغل: وقف فني + Neutral + DEX + Flow + Decision Messages'
+  '✅ ST Smart Flow Bot اشتغل: وقف فني + Neutral + DEX + Flow + Decision Messages + Finnhub Price'
 ).catch(err => {
   console.error('START MESSAGE ERROR:', err.message);
 });
@@ -1628,4 +1676,4 @@ if (isMarketOpenNY()) {
   autoScan();
 }
 
-console.log('🚀 ST Smart Flow Stocks Bot Started + Decision Messages');
+console.log('🚀 ST Smart Flow Stocks Bot Started + Decision Messages + Finnhub Price');
