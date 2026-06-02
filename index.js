@@ -94,6 +94,34 @@ async function saveDecisionMessage(source, symbol, message) {
 }
 
 // =====================
+// Save Image Snapshots
+// =====================
+
+async function saveImageSnapshot({ symbol, source, messageText }) {
+  try {
+    const { error } = await decisionSupabase
+      .from('image_snapshots')
+      .insert({
+        symbol: String(symbol || '').toUpperCase(),
+        source,
+        message_text: messageText,
+        processed: false
+      });
+
+    if (error) {
+      console.error('SAVE IMAGE SNAPSHOT ERROR:', error.message);
+      return false;
+    }
+
+    console.log('IMAGE SNAPSHOT SAVED:', symbol, source);
+    return true;
+  } catch (err) {
+    console.error('SAVE IMAGE SNAPSHOT CATCH:', err.message);
+    return false;
+  }
+}
+
+// =====================
 // Helpers
 // =====================
 
@@ -1513,6 +1541,12 @@ bot.on('message', async (msg) => {
         reportText
       );
 
+      await saveImageSnapshot({
+  symbol: text,
+  source: 'gamma',
+  messageText: reportText
+});
+
       if (
         process.env.DECISION_GROUP_ID &&
         String(chatId) !== String(process.env.DECISION_GROUP_ID)
@@ -1614,6 +1648,13 @@ ${buildMessage(symbol, a)}`;
       symbol,
       autoText
     );
+
+    await saveImageSnapshot({
+  symbol,
+  source: 'gamma_auto',
+  messageText: autoText
+});
+    
   } catch (err) {
     console.error(
       `AUTO ERROR ${symbol}:`,
