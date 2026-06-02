@@ -29,6 +29,11 @@ const decisionSupabase = createClient(
   process.env.DECISION_SUPABASE_KEY
 );
 
+const imageSupabase = createClient(
+  process.env.IMAGE_SUPABASE_URL,
+  process.env.IMAGE_SUPABASE_KEY
+);
+
 // =====================
 // ENV Settings
 // =====================
@@ -99,7 +104,7 @@ async function saveDecisionMessage(source, symbol, message) {
 
 async function saveImageSnapshot({ symbol, source, messageText }) {
   try {
-    const { error } = await decisionSupabase
+    const { error } = await imageSupabase
       .from('image_snapshots')
       .insert({
         symbol: String(symbol || '').toUpperCase(),
