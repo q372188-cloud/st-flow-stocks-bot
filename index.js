@@ -182,6 +182,7 @@ function pct(part, total) {
   if (!total) return 0;
   return (part / total) * 100;
 }
+
 function distancePercent(spot, strike) {
   if (!spot || !strike) return null;
   return ((strike - spot) / spot) * 100;
@@ -223,7 +224,6 @@ function getBid(q) {
 function getAsk(q) {
   return safeNumber(q.ask_price ?? q.ap ?? q.ask ?? q.a, null);
 }
-
 function getTodayISODateNY() {
   const parts = new Intl.DateTimeFormat('en-CA', {
     timeZone: 'America/New_York',
@@ -360,7 +360,8 @@ bot.onText(/^\/users$/i, async (msg) => {
   for (const u of data) {
     const days = await remainingDays(u.user_id);
 
-    text += `🆔 ${u.user_id}
+    text += `👤 @${u.username || 'بدون_يوزر'}
+🆔 ${u.user_id}
 ⏳ المتبقي: ${days} يوم
 
 `;
@@ -368,6 +369,7 @@ bot.onText(/^\/users$/i, async (msg) => {
 
   await bot.sendMessage(msg.chat.id, text);
 });
+
 bot.onText(/^\/remove\s+(\d+)$/i, async (msg, match) => {
   if (!isAdmin(msg.from.id)) return;
 
@@ -384,7 +386,7 @@ bot.onText(/^\/remove\s+(\d+)$/i, async (msg, match) => {
   );
 });
 
-async function activateCode(code, userId, chatId) {
+async function activateCode(code, userId, chatId, username = null) {
   const { data, error } = await supabase
     .from('invite_codes')
     .select('*')
@@ -404,6 +406,7 @@ async function activateCode(code, userId, chatId) {
     .from('subscribers')
     .upsert({
       user_id: String(userId),
+      username: username || null,
       expires_at: expiresAt
     });
 
@@ -493,7 +496,6 @@ async function getOptionSnapshot(symbol) {
     results
   };
 }
-
 async function getStockBars(symbol) {
   const to = getTodayISODateNY();
   const from = getISODateDaysAgoNY(STOCK_BARS_LOOKBACK_DAYS);
@@ -558,6 +560,7 @@ async function getOptionQuotes(optionsTicker) {
 
   return res.data.results || [];
 }
+
 // =====================
 // Technical Stop
 // =====================
@@ -982,6 +985,7 @@ function classifyTradeByQuote(trade, quote) {
     size
   };
 }
+
 async function calculateRealAskBidFlow(contracts) {
   if (!FLOW_ENABLED || !contracts || !contracts.length) {
     return {
@@ -1056,7 +1060,6 @@ async function calculateRealAskBidFlow(contracts) {
     contractsChecked
   };
 }
-
 // =====================
 // Score + Trade Plan
 // =====================
@@ -1282,6 +1285,7 @@ async function analyzeGex(symbol) {
 
   return analysis;
 }
+
 // =====================
 // Message
 // =====================
@@ -1329,7 +1333,6 @@ function buildStopText(a) {
 📌 ${a.technicalStop.source}
 📏 المخاطرة الفنية: ${fmtPercent(a.technicalStop.riskPct || 0)}`;
 }
-
 function buildFlowText(a) {
   if (hasValidRealFlow(a)) {
     return `🟢 Ask Flow: ${fmtPercent(a.realFlow.askPct)}
@@ -1491,7 +1494,13 @@ bot.on('message', async (msg) => {
     const text = msg.text.trim().toUpperCase();
 
     if (text.startsWith('ST-')) {
-      const activated = await activateCode(text, userId, chatId);
+      const activated = await activateCode(
+        text,
+        userId,
+        chatId,
+        msg.from.username || null
+      );
+
       if (activated) return;
     }
 
@@ -1547,10 +1556,10 @@ bot.on('message', async (msg) => {
       );
 
       await saveImageSnapshot({
-  symbol: text,
-  source: 'gamma',
-  messageText: reportText
-});
+        symbol: text,
+        source: 'gamma',
+        messageText: reportText
+      });
 
       if (
         process.env.DECISION_GROUP_ID &&
@@ -1655,11 +1664,10 @@ ${buildMessage(symbol, a)}`;
     );
 
     await saveImageSnapshot({
-  symbol,
-  source: 'gamma_auto',
-  messageText: autoText
-});
-    
+      symbol,
+      source: 'gamma_auto',
+      messageText: autoText
+    });
   } catch (err) {
     console.error(
       `AUTO ERROR ${symbol}:`,
