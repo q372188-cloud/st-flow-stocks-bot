@@ -1409,10 +1409,6 @@ function buildFlowText(a) {
 📌 قد يظهر 0 إذا كان السوق مغلق أو لا توجد Trades/Quotes كافية خلال آخر ${FLOW_LOOKBACK_MINUTES} دقيقة`;
 }
 
-function buildFlowText(a) {
-  ...
-}
-
 function getIntradayBalance(a) {
 
   const maxDistancePct = 0.02;
