@@ -1442,8 +1442,6 @@ function getIntradayBalance(a) {
 }
 
 function buildMessage(symbol, a) {
-
-function buildMessage(symbol, a) {
   const score = a.scoreData;
   const plan = a.tradePlan;
 
