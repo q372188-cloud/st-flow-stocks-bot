@@ -1682,7 +1682,7 @@ async function autoScan() {
     const reason = [
       nearResistance ? `🟩 قريب من مقاومة جاما ${r1.strike}` : null,
       nearSupport ? `🟥 قريب من مستوى جاما سفلي ${s1.strike}` : null,
-      nearFlip ? `🎯 قريب من Gamma Flip الحقيقي ${a.flip.strike}` : null,
+      nearFlip ? `🎯 قريب من Gamma Flip ${a.flip.strike}` : null,
       strongScore ? `🔥 Score قوي ${fmt(a.scoreData.confidence)} / 10` : null
     ].filter(Boolean).join('\n');
 
@@ -1753,7 +1753,7 @@ function isMarketOpenNY() {
 
 bot.sendMessage(
   ADMIN_CHAT_ID,
-  '✅ ST Smart Flow Bot اشتغل: Gamma Flip حقيقي + Call Wall + Put Wall + DEX + Flow'
+  '✅ ST Smart Flow Bot اشتغل: Gamma Flip + Call Wall + Put Wall + DEX + Flow'
 ).catch(err => {
   console.error('START MESSAGE ERROR:', err.message);
 });
