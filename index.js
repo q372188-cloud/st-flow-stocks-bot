@@ -1145,10 +1145,10 @@ function calculateScore(a) {
 
   if (aboveFlip) {
     callScore += 3;
-    reasons.push('✅ السعر فوق Gamma Flip');
+    reasons.push('✅ السعر فوق نقطة التوازن التاريخية');
   } else {
     putScore += 3;
-    reasons.push('✅ السعر تحت Gamma Flip');
+    reasons.push('✅ السعر تحت نقطة التوازن التاريخية');
   }
 
   if (a.totalDex > 0) {
@@ -1204,12 +1204,12 @@ function calculateScore(a) {
 
   if (flipDistance >= 5 && callScore > putScore && !aboveFlip) {
     confidence = Math.max(1, confidence - 2);
-    reasons.push('⚠️ السعر بعيد وتحت Gamma Flip، تم تخفيض الثقة');
+    reasons.push('⚠️ السعر بعيد وتحت نقطة التوازن التاريخية، تم تخفيض الثقة');
   }
 
   if (flipDistance >= 5 && putScore > callScore && aboveFlip) {
     confidence = Math.max(1, confidence - 2);
-    reasons.push('⚠️ السعر بعيد وفوق Gamma Flip، تم تخفيض الثقة');
+    reasons.push('⚠️ السعر بعيد وفوق نقطة التوازن التاريخية، تم تخفيض الثقة');
   }
 
   if (confidence < 6) {
@@ -1454,7 +1454,7 @@ ${buildStopText(a)}
 ${gammaIcon} Gamma Regime:
 ${a.gammaRegime}
 
-🎯 Gamma Flip :
+🎯 نقطة التوازن التاريخية:
 ${a.flip?.strike || 'N/A'}
 
 🟢 Call Wall :
@@ -1682,7 +1682,7 @@ async function autoScan() {
     const reason = [
       nearResistance ? `🟩 قريب من مقاومة جاما ${r1.strike}` : null,
       nearSupport ? `🟥 قريب من مستوى جاما سفلي ${s1.strike}` : null,
-      nearFlip ? `🎯 قريب من Gamma Flip ${a.flip.strike}` : null,
+      nearFlip ? `🎯 قريب من نقطة التوازن التاريخية ${a.flip.strike}` : null,
       strongScore ? `🔥 Score قوي ${fmt(a.scoreData.confidence)} / 10` : null
     ].filter(Boolean).join('\n');
 
