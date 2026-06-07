@@ -1409,12 +1409,52 @@ function buildFlowText(a) {
 📌 قد يظهر 0 إذا كان السوق مغلق أو لا توجد Trades/Quotes كافية خلال آخر ${FLOW_LOOKBACK_MINUTES} دقيقة`;
 }
 
+function buildFlowText(a) {
+  ...
+}
+
+function getIntradayBalance(a) {
+
+  const maxDistancePct = 0.02;
+
+  const levels = (a.topLevels || [])
+    .filter(l => {
+      if (!l?.strike || !Number.isFinite(Number(l.netGex)) || !a.spot) return false;
+      return Math.abs(Number(l.strike) - Number(a.spot)) / Number(a.spot) <= maxDistancePct;
+    });
+
+  if (!levels.length) return null;
+
+  let weightedSum = 0;
+  let totalWeight = 0;
+
+  for (const l of levels) {
+    const strike = Number(l.strike);
+    const weight = Math.abs(Number(l.netGex));
+
+    weightedSum += strike * weight;
+    totalWeight += weight;
+  }
+
+  if (!totalWeight) return null;
+
+  return {
+    strike: Number((weightedSum / totalWeight).toFixed(2)),
+    netGex: levels.reduce((sum, l) => sum + Number(l.netGex || 0), 0),
+    count: levels.length
+  };
+}
+
+function buildMessage(symbol, a) {
+
 function buildMessage(symbol, a) {
   const score = a.scoreData;
   const plan = a.tradePlan;
 
   const r1 = a.resistances[0];
   const s1 = a.supports[0];
+
+  const intradayBalance = getIntradayBalance(a);
 
   const gammaIcon = a.gammaRegime === 'Positive Gamma' ? '🟢' : '🔴';
 
@@ -1456,6 +1496,9 @@ ${a.gammaRegime}
 
 🎯 نقطة التوازن التاريخية:
 ${a.flip?.strike || 'N/A'}
+
+📍 نقطة التوازن اللحظية:
+${intradayBalance?.strike || 'N/A'} | ${intradayBalance?.netGex >= 0 ? '+' : ''}${fmt(intradayBalance?.netGex)}
 
 🟢 Call Wall :
 ${a.realCallWall?.strike || 'N/A'} | ${a.realCallWall?.netGex >= 0 ? '+' : ''}${fmt(a.realCallWall?.netGex)}
