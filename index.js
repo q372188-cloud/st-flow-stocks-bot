@@ -1454,13 +1454,13 @@ ${buildStopText(a)}
 ${gammaIcon} Gamma Regime:
 ${a.gammaRegime}
 
-🎯 Gamma Flip الحقيقي:
+🎯 Gamma Flip :
 ${a.flip?.strike || 'N/A'}
 
-🟢 Call Wall الحقيقي:
+🟢 Call Wall :
 ${a.realCallWall?.strike || 'N/A'} | ${a.realCallWall?.netGex >= 0 ? '+' : ''}${fmt(a.realCallWall?.netGex)}
 
-🔴 Put Wall الحقيقي:
+🔴 Put Wall :
 ${a.realPutWall?.strike || 'N/A'} | ${a.realPutWall?.netGex >= 0 ? '+' : ''}${fmt(a.realPutWall?.netGex)}
 
 📈 DEX:
