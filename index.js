@@ -2,6 +2,7 @@ require('dotenv').config();
 
 const TelegramBot = require('node-telegram-bot-api');
 const axios = require('axios');
+const express = require('express');
 const crypto = require('crypto');
 const { createClient } = require('@supabase/supabase-js');
 
@@ -18,6 +19,10 @@ const bot = new TelegramBot(process.env.BOT_TOKEN, {
 const API_KEY = process.env.MASSIVE_API_KEY;
 const FINNHUB_API_KEY = process.env.FINNHUB_API_KEY;
 const ADMIN_CHAT_ID = process.env.ADMIN_CHAT_ID;
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+const GAMMA_API_SECRET = process.env.GAMMA_API_SECRET;
 
 const supabase = createClient(
   process.env.SUPABASE_URL,
@@ -579,6 +584,7 @@ async function getOptionQuotes(optionsTicker) {
 
   return res.data.results || [];
 }
+
 // =====================
 // Technical Stop
 // =====================
@@ -692,7 +698,6 @@ function calculateTechnicalStop(bars, bias, entry, spot) {
     valid: false
   };
 }
-
 // =====================
 // GEX Core
 // =====================
@@ -901,7 +906,8 @@ function calculateGex(data, liveSpot = null) {
       });
     }
   }
-    const rows = Object.values(byStrike).sort((a, b) => a.strike - b.strike);
+
+  const rows = Object.values(byStrike).sort((a, b) => a.strike - b.strike);
 
   if (!rows.length) throw new Error('NO_GEX_DATA');
 
@@ -1122,7 +1128,6 @@ async function calculateRealAskBidFlow(contracts) {
     contractsChecked
   };
 }
-
 // =====================
 // Score + Trade Plan
 // =====================
@@ -1224,6 +1229,7 @@ function calculateScore(a) {
     reasons
   };
 }
+
 function extendTarget(level2, level3) {
   if (!level2 || !level3) return 'N/A';
 
@@ -1408,9 +1414,7 @@ function buildFlowText(a) {
 
 📌 قد يظهر 0 إذا كان السوق مغلق أو لا توجد Trades/Quotes كافية خلال آخر ${FLOW_LOOKBACK_MINUTES} دقيقة`;
 }
-
 function getIntradayBalance(a) {
-
   const maxDistancePct = 0.02;
 
   const levels = (a.topLevels || [])
@@ -1676,6 +1680,65 @@ bot.on('message', async (msg) => {
       '❌ لم أستطع جلب بيانات GEX لهذا الرمز.'
     );
   }
+});
+// =====================
+// Internal API For Unified Bot
+// =====================
+
+app.get('/api/gamma', async (req, res) => {
+  try {
+    const key = String(req.query.key || '');
+    const symbol = String(req.query.symbol || '').trim().toUpperCase();
+
+    if (!GAMMA_API_SECRET || key !== GAMMA_API_SECRET) {
+      return res.status(401).json({
+        ok: false,
+        error: 'UNAUTHORIZED'
+      });
+    }
+
+    if (!isValidSymbol(symbol)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'INVALID_SYMBOL'
+      });
+    }
+
+    const analysis = await analyzeGex(symbol);
+    const reportText = buildMessage(symbol, analysis);
+
+    await saveDecisionMessage('GAMMA_API', symbol, reportText);
+
+    await saveImageSnapshot({
+      symbol,
+      source: 'gamma_api',
+      messageText: reportText
+    });
+
+    return res.json({
+      ok: true,
+      symbol,
+      text: reportText
+    });
+  } catch (err) {
+    console.error('GAMMA API ERROR:', err.response?.data || err.message);
+
+    return res.status(500).json({
+      ok: false,
+      error: 'GAMMA_ANALYSIS_FAILED'
+    });
+  }
+});
+
+app.get('/health', (req, res) => {
+  res.json({
+    ok: true,
+    service: 'gamma'
+  });
+});
+
+app.listen(PORT, () => {
+  console.log(`Gamma API running on port ${PORT}`);
 });
 
 // =====================
